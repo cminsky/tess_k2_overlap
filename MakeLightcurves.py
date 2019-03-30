@@ -8,7 +8,7 @@ print('lk version:',lk.__version__)
 # Fetching planet information
 crossmatch_planets = pandas.read_csv('data/crossmatch_planets.csv')
 crossmatch_candidates = pandas.read_csv('data/crossmatch_candidates.csv')
-combined = pandas.concat([crossmatch_planets,crossmatch_candidates])
+combined = pandas.concat([crossmatch_planets,crossmatch_candidates],sort=False)
 
 def get_star_name(tic=None,epic=None):
     """Return the name of a host star based on its TIC ID."""
@@ -16,14 +16,20 @@ def get_star_name(tic=None,epic=None):
         index = combined.index[combined['TIC'] == tic].tolist()
     if epic:
         index = combined.index[combined['EPIC'] == epic].tolist()
-    full_name = combined['pl_hostname'][index]
-    name = full_name[:-2]
+    if index ==[]:
+        return None
+    name = combined['pl_hostname'][index].tolist()[0]
     return name
 
 def get_tic_from_epic(epic):
     index = combined.index[combined['EPIC'] == epic].tolist()
     tic = combined['TIC'][index].tolist()[0]
     return tic
+
+def get_epic_from_tic(tic):
+    index = combined.index[combined['TIC'] == tic].tolist()
+    epic = combined['EPIC'][index].tolist()[0]
+    return epic
 
 def get_tic_from_name(hostname):
     index = combined.index[combined['pl_hostname'] == hostname].tolist()
@@ -48,23 +54,24 @@ def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=False):
             tic = get_tic_from_name(hostname)
 
     if verbose: print('Fetching TPF...')
-    tpf = lk.search_targetpixelfile(tic,mission='tess').download()
-    
     if mission.lower() == 'tess':
-        if verbose: print('De-trending...')
-        corrector = lk.PLDCorrector(tpf)
-        lc = corrector.correct()
-        if verbose: print('Success')
-    
+        tpf = lk.search_targetpixelfile(tic,mission='tess').download()
     elif mission.lower() == 'k2':
-        if verbose: print('De-trending...')
-        lc = tpf.to_lightcurve(aperture_mask=tpf.pipeline_mask)
-        lc.remove_outliers(sigma=6).flatten()
-        if verbose: print('Success')
-    
+        epic = get_epic_from_tic(tic)
+        tpf = lk.search_targetpixelfile(epic,mission='k2').download()
     else:
         raise ValueError('Mission must be \'tess\' or \'k2\'.')
-    
+
+    if verbose: print('De-trending...')
+    if mission.lower() == 'tess':
+        corrector = lk.PLDCorrector(tpf)
+        lc = corrector.correct()
+    elif mission.lower() == 'k2':
+        lc = tpf.to_lightcurve(aperture_mask=tpf.pipeline_mask)
+        lc.remove_outliers(sigma=6).flatten()    
+
+
+    if verbose: print('Success')    
     return lc
 
 # For pretty plotting
@@ -105,6 +112,8 @@ def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transit_dict
         elif epic:
             title = get_star_name(epic=epic)
 
+    title = title+' '+mission
+
     if mission.lower() == 'tess':
         offset = 2457000
     elif mission.lower() == 'k2':
@@ -121,7 +130,7 @@ def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transit_dict
         j += 1
     
     plt.title(title) 
-    plt.savefig(title+'.png')
+    plt.savefig('images/'+title+'.png')
     plt.show()
 
 
