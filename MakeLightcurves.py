@@ -38,7 +38,7 @@ def get_tic_from_name(hostname):
     tic = combined['TIC'][index].tolist()[0]
     return tic
 
-def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=False):
+def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=True):
     """Return a LightCurve object from TESS or K2 planet.
 
     Keyword arguments:
@@ -76,7 +76,7 @@ def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=False):
     if verbose: print('Success')    
     return lc
 
-def predict_transits(hostname,period=None,t0=None,mission='tess',verbose=False):
+def predict_transits(hostname,period=None,t0=None,mission='tess',verbose=True):
 
     if period == None or t0 == None:
         if verbose: print('Fetching planet parameters...')
@@ -114,7 +114,7 @@ def predict_transits(hostname,period=None,t0=None,mission='tess',verbose=False):
 
 
 
-def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transit_dict=None,verbose=False):
+def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transits=None,verbose=True):
     """Plot the light curve of a host star with predicted transit overlaid.
 
     Keyword arguments:
@@ -151,16 +151,23 @@ def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transit_dict
 
     ax = lc.scatter(s=0.1)
     
-    if transit_dict:
+    # for automatically generated lists for single planets
+    if isinstance(transits,list):
+        for time in transits:
+            plt.axvline(x=time-offset, color=colors[0], alpha=0.5, linewidth = 3)
+    # for multi-planet systems
+    elif isinstance(transits,dict):
         j = 0
         color_index = j % len(colors)
-        for p in transit_dict:
-            for time in transit_dict[p]:
+        for p in transits:
+            for time in transits[p]:
                 plt.axvline(x=time-offset, color=colors[color_index], alpha=0.5, linewidth = 3)
         j += 1
     
     plt.title(title) 
     plt.savefig('images/'+title+'.png')
     plt.show()
+
+    return lc
 
 
