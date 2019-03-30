@@ -29,7 +29,11 @@ def cross_match(target_type='planets',short_cad_TICs=None,verbose=False,vals=[])
         for i in range(1,27):
             if row['S'+str(i)] == 1:
                 sector = i
-        tic = tic_from_coords((float(RA),float(Dec)))[0]
+        try:
+            tic = tic_from_coords((float(RA),float(Dec)))[0]
+        except ValueError:
+            print('Failed on RA:',RA,'Dec:',Dec)
+            pass
         if tic in short_cad_TICs:
             val_dict = {'EPIC':epic,'TIC':tic,'RA':RA,'DEC':Dec,'sector':sector}
             for additional_val in vals:
