@@ -1,13 +1,6 @@
-
-# coding: utf-8
-
-# In[ ]:
-
-
 """
 Thanks to Christina Hedges for the NEXSCI data retrieval function
 """
-
 
 import pandas as pd
 import numpy as np
@@ -40,30 +33,31 @@ def retrieve_online_data():
          right_on=['pl_hostname', 'pl_letter'])
     return df[df.pl_tranflag == 1]
 
-
-# In[ ]:
-
-
 def save_nexsci_output():    
     df = retrieve_online_data()
-    df.to_csv('nexsci_output.csv')
+    df.to_csv('data/nexsci_output.csv')
+
+def read_nexsci_output(verbose=True):
+    try:
+        df = pd.read_csv('data/nexsci_output.csv')
+    except FileNotFoundError:
+        if verbose: print('File not found; retrieving data...')
+        save_nexsci_output()
+        df = read_nexsci_output()
+    if verbose: print('Success')
+    return df
 
 def get_number_of_planets(hostname):
+    df = read_nexsci_output(verbose=False)
     n = np.asarray(df.loc[df.pl_hostname == hostname][['pl_pnum']])[0]
-    
     return n
 
 def get_planet_params(hostname, planet_letter='b'):
-    df = retrieve_online_data()
+    df = read_nexsci_output(verbose=False)
     period, t0, dur, depth, impact_param, r_planet, r_star = np.asarray(df.loc[(df.pl_hostname == hostname) & 
                                                (df.pl_letter == planet_letter)][['pl_orbper', 'pl_tranmid',
                                                 'pl_trandur', 'pl_trandep', 'pl_imppar', 'pl_radj', 'st_rad']])[0]
-    
     return period, t0, dur, depth, impact_param, r_planet, r_star
-
-
-# In[ ]:
-
 
 def define_offsets():
     tess_offset = 2457000
@@ -71,9 +65,14 @@ def define_offsets():
     return tess_offset, k2_offset
 
 def get_params(hostname):
-    period, t0, dur, depth, impact_param, r_planet, r_star = get_planet_params(hostname)
-    return period, t0, dur, depth, impact_param, r_planet, r_star
-
+    df = read_nexsci_output(verbose=False)
+    planet_num = get_number_of_planets(hostname)[0]
+    planet_letters = 'bcdefghijklmnopqrstuvwxyz'
+    params_dict = {}
+    for i in range(planet_num):
+        period, t0, dur, depth, impact_param, r_planet, r_star = get_planet_params(hostname,planet_letter=planet_letters[i])
+        params_dict[planet_letters[i]] = [period, t0, dur, depth, impact_param, r_planet, r_star]
+    return params_dict
 
 def generate_inputs(period, t0, dur, depth, impact_param, r_planet, r_star):
     r, r_min, r_max = generate_radius_ratio(depth, r_planet, r_star)

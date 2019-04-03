@@ -12,6 +12,10 @@ crossmatch_planets = pandas.read_csv('data/crossmatch_planets.csv')
 crossmatch_candidates = pandas.read_csv('data/crossmatch_candidates.csv')
 combined = pandas.concat([crossmatch_planets,crossmatch_candidates],sort=True)
 
+"""
+Helper functions
+"""
+
 def get_star_name(tic=None,epic=None):
     """Return the name of a host star based on its TIC ID."""
     if tic:
@@ -38,49 +42,14 @@ def get_tic_from_name(hostname):
     tic = combined['TIC'][index].tolist()[0]
     return tic
 
-def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=True):
-    """Return a LightCurve object from TESS or K2 planet.
+"""
+Transit predictions
+"""
 
-    Keyword arguments:
-    Need one of:
-        tic -- TIC ID # of the host star
-        epic -- EPIC ID # of the host star
-        hostname -- host star name
-    mission -- which mission to get the data from (default 'tess')
-    verbose -- whether to print status updates (default False)
-    """
-    if tic == None:
-        if epic:
-            tic = get_tic_from_epic(epic)
-        elif hostname:
-            tic = get_tic_from_name(hostname)
-
-    if verbose: print('Fetching TPF...')
-    if mission.lower() == 'tess':
-        tpf = lk.search_targetpixelfile(tic,mission='tess').download()
-    elif mission.lower() == 'k2':
-        epic = get_epic_from_tic(tic)
-        tpf = lk.search_targetpixelfile(epic,mission='k2').download()
-    else:
-        raise ValueError('Mission must be \'tess\' or \'k2\'.')
-
-    if verbose: print('De-trending...')
-    if mission.lower() == 'tess':
-        corrector = lk.PLDCorrector(tpf)
-        lc = corrector.correct()
-    elif mission.lower() == 'k2':
-        lc = tpf.to_lightcurve(aperture_mask=tpf.pipeline_mask)
-        lc.remove_outliers(sigma=6).flatten()    
-
-
-    if verbose: print('Success')    
-    return lc
-
-def predict_transits(hostname,period=None,t0=None,mission='tess',verbose=True):
-
+def predict_transits(hostname,planet='b',period=None,t0=None,mission='tess',verbose=True):
     if period == None or t0 == None:
         if verbose: print('Fetching planet parameters...')
-        period, t0, dur, depth, impact_param, r_planet, r_star = get_params(hostname)
+        period, t0, dur, depth, impact_param, r_planet, r_star = get_planet_params(hostname,planet)
 
     if verbose: print('Predicting transits...')
     now = Time.now().jd
@@ -112,7 +81,57 @@ def predict_transits(hostname,period=None,t0=None,mission='tess',verbose=True):
     if verbose: print('Success')
     return overlap_transits
 
+def predict_multi_planet_transits(hostname,mission='tess',verbose=True):
+    params = get_params(hostname)
+    transit_dict = {}
+    for planet in params:
+        p = params[planet][0]
+        t0 = params[planet][1]
+        transits = predict_transits(hostname=hostname,planet=planet,period=p,t0=t0,verbose=False)
+        transit_dict[planet] = transits
+    return transit_dict
 
+"""
+Light curve generation and plotting
+"""
+
+def make_lc(tic=None,epic=None,hostname=None,mission='tess',verbose=True):
+    """Return a LightCurve object from TESS or K2 planet.
+
+    Keyword arguments:
+    Need one of:
+        tic -- TIC ID # of the host star
+        epic -- EPIC ID # of the host star
+        hostname -- host star name
+    mission -- which mission to get the data from (default 'tess')
+    verbose -- whether to print status updates (default False)
+    """
+    if tic == None:
+        if epic:
+            tic = get_tic_from_epic(epic)
+        elif hostname:
+            tic = get_tic_from_name(hostname)
+
+    if verbose: print('Fetching TPF...')
+    if mission.lower() == 'tess':
+        tpf = lk.search_targetpixelfile(tic,mission='tess').download()
+    elif mission.lower() == 'k2':
+        epic = get_epic_from_tic(tic)
+        tpf = lk.search_targetpixelfile(epic,mission='k2').download()
+    else:
+        raise ValueError('Mission must be \'tess\' or \'k2\'.')
+
+    if verbose: print('Detrending...')
+    if mission.lower() == 'tess':
+        corrector = lk.PLDCorrector(tpf)
+        lc = corrector.correct()
+    elif mission.lower() == 'k2':
+        lc = tpf.to_lightcurve(aperture_mask=tpf.pipeline_mask)
+        lc.remove_outliers(sigma=6).flatten()    
+
+
+    if verbose: print('Success')    
+    return lc
 
 def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transits=None,verbose=True):
     """Plot the light curve of a host star with predicted transit overlaid.
@@ -138,11 +157,11 @@ def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transits=Non
         if tic == None and epic == None:
             title = 'Unknown'
         elif tic:
-            title = get_star_name(tic=tic)
+            hostname = get_star_name(tic=tic)
         elif epic:
-            title = get_star_name(epic=epic)
+            hostname = get_star_name(epic=epic)
 
-    title = title+' '+mission
+    title = hostname+' '+mission
 
     if mission.lower() == 'tess':
         offset = 2457000
@@ -151,23 +170,26 @@ def plot_lc(lc=None,tic=None,epic=None,hostname=None,mission='tess',transits=Non
 
     ax = lc.scatter(s=0.1)
     
-    # for automatically generated lists for single planets
+    # for hardcoded single planet lists
     if isinstance(transits,list):
         for time in transits:
             plt.axvline(x=time-offset, color=colors[0], alpha=0.5, linewidth = 3)
-    # for multi-planet systems
-    elif isinstance(transits,dict):
+    
+    # for multi-planet systems and auto-generating dicts
+    else:
+        transits = predict_multi_planet_transits(hostname=hostname,mission=mission,verbose=verbose)
+    
+    if isinstance(transits,dict):
         j = 0
-        color_index = j % len(colors)
         for p in transits:
+            color_index = j % len(colors)
             for time in transits[p]:
-                plt.axvline(x=time-offset, color=colors[color_index], alpha=0.5, linewidth = 3)
-        j += 1
+                plt.axvline(x=time-offset, color=colors[color_index], alpha=0.5, linewidth = 3, label=p)
+            j += 1
     
     plt.title(title) 
+    plt.legend()
     plt.savefig('images/'+title+'.png')
     plt.show()
-
-    return lc
 
 
